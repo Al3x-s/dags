@@ -29,6 +29,7 @@ jobs:
         run: echo "author=$(git log -1 --pretty=format:'%ae' | cut -d '@' -f 1)" >> "$GITHUB_OUTPUT"
       
       
+
   extract_dag_deployment:
     runs-on: self-hosted
     outputs:
