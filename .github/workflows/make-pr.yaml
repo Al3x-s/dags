@@ -79,7 +79,7 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
         with:
-          repository: asanchez/mock-k8s-repo
+          repository: Al3x-s/mock-k8s-repo
           token: ${{ secrets.GHTOKEN }}
 
       - name: create a branch
