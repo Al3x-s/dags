@@ -83,10 +83,8 @@ jobs:
           token: ${{ secrets.GHTOKEN }}
 
       - name: create a branch
-        env:
-          GH_ENTERPRISE_TOKEN: ${{ secrets.GHTOKEN }}
-          GH_HOST: git.drwholdings.com
         run: |
+          sudo apt install - jq
           git checkout -b bump/${{ github.event.repository.name }}-${{ needs.get_version.outputs.tag_version }}
 
           cd environments/ai-dev/dagster
