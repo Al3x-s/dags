@@ -95,9 +95,10 @@ jobs:
         
           git config user.name github-actions
           git config user.email github-actions@github.com
+          git pull origin main
           git add dagster_code_location.json
           git commit -m "build: new image version using GH actions"
-          git push origin --set-upstream bump/${{ github.event.repository.name }}-${{needs.get_version.outputs.tag_version}}
+          git push -f origin --set-upstream bump/${{ github.event.repository.name }}-${{needs.get_version.outputs.tag_version}}
 
           gh pr create \
               --title "Automated Production ${{ github.event.repository.name }} Release ${{needs.get_version.outputs.tag_version}}" \
