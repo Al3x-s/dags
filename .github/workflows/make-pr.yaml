@@ -1,0 +1,110 @@
+name: Open Pull Request
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  get_version:
+    name: Get Latest Github Tag
+    runs-on: [ self-hosted ]
+    outputs:
+      tag_version: ${{ steps.tag.outputs.tag_version }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      author: ${{ steps.git.outputs.author }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - id: tag
+        run: echo "tag_version=$(git describe --tags)" >> "$GITHUB_OUTPUT"
+
+      - id: pr
+        run: echo "pr_number=$(git show -s --format=%s | grep -Eo '#[0-9]*' | cut -d '#' -f 2)" >> "$GITHUB_OUTPUT"
+
+      - id: git
+        run: echo "author=$(git log -1 --pretty=format:'%ae' | cut -d '@' -f 1)" >> "$GITHUB_OUTPUT"
+      
+      
+  extract_dag_deployment:
+    runs-on: self-hosted
+    outputs:
+      deployment_name: ${{ steps.parse_yaml.outputs.deployment_name }}
+      image_name: ${{ steps.parse_yaml.outputs.image_name }}
+      tag: ${{ steps.parse_yaml.outputs.tag }}
+      pullpolicy: ${{ steps.parse_yaml.outputs.pullpolicy }}
+      port: ${{ steps.parse_yaml.outputs.port }}
+      rpc_arg: ${{ steps.parse_yaml.outputs.rpc_arg }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # - name: Set up Node.js environment
+      #   run: |
+      #     sudo apt install -y nodejs npm
+      #     npm install js-yaml
+
+      - name: Parse YAML
+        id: parse_yaml
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const yaml = require('js-yaml');
+            const fs = require('fs');
+
+            const fileContents = fs.readFileSync('deployment_info.yaml', 'utf8');
+            const data = yaml.load(fileContents);
+            console.log(data);
+
+            const fsPromises = fs.promises;
+            async function writeOutput(name, value) {
+              await fsPromises.appendFile(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
+            }
+
+            writeOutput('deployment_name', data.deployment_name);
+            writeOutput('image_name', data.image.image_name);
+            writeOutput('tag', data.image.tag);
+            writeOutput('pullpolicy', data.image.pullpolicy);
+            writeOutput('port', data.image.port);
+            writeOutput('rpc_arg', data.rpc_arg);
+   
+  create_pr:
+    runs-on: [self-hosted]
+    needs:  [get_version, extract_dag_deployment]
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+        with:
+          repository: asanchez/mock-k8s-repo
+          token: ${{ secrets.GHTOKEN }}
+
+      - name: create a branch
+        env:
+          GH_ENTERPRISE_TOKEN: ${{ secrets.GHTOKEN }}
+          GH_HOST: git.drwholdings.com
+        run: |
+          git checkout -b bump/${{ github.event.repository.name }}-${{ needs.get_version.outputs.tag_version }}
+
+          cd environments/ai-dev/dagster
+
+          jq --arg dn ${{needs.extract_dag_deployment.outputs.deployment_name}} --arg image ${{needs.extract_dag_deployment.outputs.image_name}} --arg tg ${{needs.get_version.outputs.tag_version}} --arg pp ${{needs.extract_dag_deployment.outputs.pullpolicy}} --arg ra ${{needs.extract_dag_deployment.outputs.rpc_arg}} --arg po ${{needs.extract_dag_deployment.outputs.port}} '. + {($dn): {"name":$dn, "image": {"image_name": $image, "tag": $tg, "pullpolicy": $pp}, "rpc_args": ($ra | split(",")), "port" : $po }}' dagster_code_location.json > temp.json 
+
+          mv temp.json dagster_code_location.json
+        
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add dagster_code_location.json
+          git commit -m "build: new image version using GH actions"
+          git push origin --set-upstream bump/${{ github.event.repository.name }}-${{needs.get_version.outputs.tag_version}}
+
+          gh pr create \
+              --title "Automated Production ${{ github.event.repository.name }} Release ${{needs.get_version.outputs.tag_version}}" \
+              --head bump/${{ github.event.repository.name }}-${{needs.get_version.outputs.tag_version}} \
+              --body "This PR is automated from https://git.drwholdings.com/asanchez/${{ github.event.repository.name }}/pull/${{ needs.get_version.outputs.pr_number}}" \
+              --assignee ${{needs.get_version.outputs.author}} \
+              --label "automated release"
+
+        shell: bash

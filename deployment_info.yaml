@@ -1,0 +1,6 @@
+deployment_name: "test_name"
+image:
+  image_name: "dabster"
+rpc_arg: 
+  - "-m"
+  - "intern_repo"
